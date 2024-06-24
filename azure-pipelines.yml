@@ -41,5 +41,5 @@ stages:
         command: 'push'
         tags: '$(Build.BuildId)'
         dockerRegistryEndpoint: 'dpcode.azurecr.io'
-        dockerUsername: 'nagarro'
+        dockerUsername: ''
         dockerPassword: '$(acrPassword)' 
