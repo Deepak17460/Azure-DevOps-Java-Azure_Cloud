@@ -1,65 +1,57 @@
 trigger:
-- developer
-
+- master
+ 
 pool:
-  vmImage: 'ubuntu-latest'
-
-name: $(date:yyyyMMdd)$(rev:.r)
-
-stages:
-- stage: Build
-  displayName: 'Build Stage'
-  jobs:
-  - job: BuildJob
-    displayName: 'Build Job'
-    steps:
-    - task: Maven@3
-      inputs:
-        mavenPomFile: 'pom.xml'
-        goals: 'clean install'
-
-    - task: Maven@3
-      displayName: Maven Test
-      inputs:
-        mavenPomFile: 'pom.xml'
-        publishJUnitResults: true
-        testResultsFiles: '**/surefire-reports/TEST-*.xml'
-        codeCoverageToolOption: 'JaCoCo'
-        codeCoverageRestoreOriginalPomXml: true
-        goals: 'test'
-
-    - task: CopyFiles@2
-      inputs:
-        SourceFolder: '$(Build.SourcesDirectory)/target'
-        Contents: '**/*.war'
-        TargetFolder: '$(Build.ArtifactStagingDirectory)'
-        OverWrite: true
-
-    - script: |
-        mv $(Build.ArtifactStagingDirectory)/*.war $(Build.ArtifactStagingDirectory)/ROOT.war
-      displayName: 'Rename WAR file'
-
-    - publish: '$(Build.ArtifactStagingDirectory)'
-      artifact: 'drop'
-
-- stage: Deploy
-  displayName: 'Deploy Stage'
-  jobs:
-  - job: DeployJob
-    displayName: 'Deploy Job'
-    steps:
-    - download: current
-      artifact: drop
-
-    - task: AzureRmWebAppDeployment@4
-      inputs:
-        ConnectionType: 'AzureRM'
-        azureSubscription: 'Azure-Cloud'
-        appType: 'webAppLinux'
-        WebAppName: 'java-dpcode'
-        packageForLinux: '$(Pipeline.Workspace)/drop/**/*.war'
-        RuntimeStack: 'TOMCAT|9.0-java11'
-        StartupCommand: 'java -jar ROOT.war'
-            
-      
-    
+  vmImage: 'windows-latest'
+ 
+variables:
+  solution: '**/*.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+ 
+steps:
+- task: NuGetToolInstaller@1
+ 
+- task: NuGetCommand@2
+  inputs:
+    restoreSolution: '$(solution)'
+ 
+- task: VSBuild@1
+  inputs:
+    solution: '$(solution)'
+    msbuildArgs: '/p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true /p:DesktopBuildPackageLocation="$(build.artifactStagingDirectory)\WebApp.zip" /p:DeployIisAppPath="Default Web Site"'
+    platform: '$(buildPlatform)'
+    configuration: '$(buildConfiguration)'
+ 
+- task: SonarQubePrepare@5
+  inputs:
+    SonarQube: 'SonarQube-1'
+    scannerMode: 'MSBuild'
+    projectKey: 'assignment'
+    projectName: 'assignment'
+ 
+- task: MSBuild@1
+  inputs:
+    solution: '$(solution)'
+    platform: '$(buildPlatform)'
+    configuration: '$(buildConfiguration)'
+ 
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'test'
+    projects: 'UserRepository.XUnit.Test/**/*.csproj'
+    arguments: '--collect "Code Coverage"'
+ 
+- task: SonarQubeAnalyze@5
+  inputs:
+    jdkversion: 'JAVA_HOME_17_X64'
+ 
+- task: VSTest@2
+  inputs:
+    platform: '$(buildPlatform)'
+    configuration: '$(buildConfiguration)'
+    codeCoverageEnabled: true
+ 
+- task: SonarQubePublish@5
+  inputs:
+    pollingTimeoutSec: '300'
