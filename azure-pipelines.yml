@@ -1,0 +1,65 @@
+trigger:
+- developer
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+name: $(date:yyyyMMdd)$(rev:.r)
+
+stages:
+- stage: Build
+  displayName: 'Build Stage'
+  jobs:
+  - job: BuildJob
+    displayName: 'Build Job'
+    steps:
+    - task: Maven@3
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'clean install'
+
+    - task: Maven@3
+      displayName: Maven Test
+      inputs:
+        mavenPomFile: 'pom.xml'
+        publishJUnitResults: true
+        testResultsFiles: '**/surefire-reports/TEST-*.xml'
+        codeCoverageToolOption: 'JaCoCo'
+        codeCoverageRestoreOriginalPomXml: true
+        goals: 'test'
+
+    - task: CopyFiles@2
+      inputs:
+        SourceFolder: '$(Build.SourcesDirectory)/target'
+        Contents: '**/*.war'
+        TargetFolder: '$(Build.ArtifactStagingDirectory)'
+        OverWrite: true
+
+    - script: |
+        mv $(Build.ArtifactStagingDirectory)/*.war $(Build.ArtifactStagingDirectory)/ROOT.war
+      displayName: 'Rename WAR file'
+
+    - publish: '$(Build.ArtifactStagingDirectory)'
+      artifact: 'drop'
+
+- stage: Deploy
+  displayName: 'Deploy Stage'
+  jobs:
+  - job: DeployJob
+    displayName: 'Deploy Job'
+    steps:
+    - download: current
+      artifact: drop
+
+    - task: AzureRmWebAppDeployment@4
+      inputs:
+        ConnectionType: 'AzureRM'
+        azureSubscription: 'Azure-Cloud'
+        appType: 'webAppLinux'
+        WebAppName: 'java-dpcode'
+        packageForLinux: '$(Pipeline.Workspace)/drop/**/*.war'
+        RuntimeStack: 'TOMCAT|9.0-java11'
+        StartupCommand: 'java -jar ROOT.war'
+            
+      
+    
