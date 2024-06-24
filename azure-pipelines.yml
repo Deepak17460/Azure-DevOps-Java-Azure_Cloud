@@ -1,57 +1,45 @@
 trigger:
-- master
- 
+- release
+
 pool:
-  vmImage: 'windows-latest'
- 
-variables:
-  solution: '**/*.sln'
-  buildPlatform: 'Any CPU'
-  buildConfiguration: 'Release'
- 
-steps:
-- task: NuGetToolInstaller@1
- 
-- task: NuGetCommand@2
-  inputs:
-    restoreSolution: '$(solution)'
- 
-- task: VSBuild@1
-  inputs:
-    solution: '$(solution)'
-    msbuildArgs: '/p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true /p:DesktopBuildPackageLocation="$(build.artifactStagingDirectory)\WebApp.zip" /p:DeployIisAppPath="Default Web Site"'
-    platform: '$(buildPlatform)'
-    configuration: '$(buildConfiguration)'
- 
-- task: SonarQubePrepare@5
-  inputs:
-    SonarQube: 'SonarQube-1'
-    scannerMode: 'MSBuild'
-    projectKey: 'assignment'
-    projectName: 'assignment'
- 
-- task: MSBuild@1
-  inputs:
-    solution: '$(solution)'
-    platform: '$(buildPlatform)'
-    configuration: '$(buildConfiguration)'
- 
-- task: DotNetCoreCLI@2
-  inputs:
-    command: 'test'
-    projects: 'UserRepository.XUnit.Test/**/*.csproj'
-    arguments: '--collect "Code Coverage"'
- 
-- task: SonarQubeAnalyze@5
-  inputs:
-    jdkversion: 'JAVA_HOME_17_X64'
- 
-- task: VSTest@2
-  inputs:
-    platform: '$(buildPlatform)'
-    configuration: '$(buildConfiguration)'
-    codeCoverageEnabled: true
- 
-- task: SonarQubePublish@5
-  inputs:
-    pollingTimeoutSec: '300'
+  name: Default
+  demands:
+  - agent.name -equals dpcode
+
+stages:
+- stage: Build
+  jobs:
+  - job: BuildJob
+    steps:
+    - task: Maven@4
+      inputs:
+        mavenPomFile: 'pom.xml'
+        publishJUnitResults: true
+        testResultsFiles: '**/surefire-reports/TEST-*.xml'
+        javaHomeOption: 'JDKVersion'
+        mavenVersionOption: 'Default'
+        mavenAuthenticateFeed: false
+        effectivePomSkip: false
+        sonarQubeRunAnalysis: false
+
+    - task: Docker@2
+      inputs:
+        containerRegistry: 'Azure'
+        repository: 'dpcode72/java-com'
+        command: 'build'
+        Dockerfile: '**/Dockerfile'
+        tags: '$(Build.BuildId)'
+
+- stage: Push
+  jobs:
+  - job: PushJob
+    steps:
+    - task: Docker@2
+      inputs:
+        containerRegistry: 'Azure'
+        repository: 'dpcode72/java-com'
+        command: 'push'
+        tags: '$(Build.BuildId)'
+        dockerRegistryEndpoint: 'dpcode.azurecr.io'
+        dockerUsername: 'nagarro'
+        dockerPassword: '$(acrPassword)' 
